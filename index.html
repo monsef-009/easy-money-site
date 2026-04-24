@@ -2,215 +2,174 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Neon Survivor: Complex Edition</title>
+    <title>Neon Infiltrator: Level Up</title>
     <style>
-        body { margin: 0; background: #050505; color: #fff; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
-        canvas { display: block; margin: 0 auto; background: #000; cursor: crosshair; }
-        #stats { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border: 1px solid #333; pointer-events: none; }
-        .high-score { color: #0f0; }
-        #deathScreen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; display: none; background: rgba(0,0,0,0.9); padding: 40px; border: 2px solid #f00; }
-        button { padding: 10px 20px; background: #f00; color: #fff; border: none; cursor: pointer; font-weight: bold; }
+        body { margin: 0; background: #000; color: #0ff; font-family: 'Courier New', monospace; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
+        canvas { border: 4px solid #0ff; box-shadow: 0 0 20px #0ff; background: #050505; margin-top: 20px; }
+        #ui { margin-top: 10px; text-align: center; text-transform: uppercase; letter-spacing: 2px; }
+        .stat { display: inline-block; margin: 0 20px; font-size: 20px; font-weight: bold; }
     </style>
 </head>
 <body>
 
-<div id="stats">
-    Health: <span id="hp">100</span>%<br>
-    Score: <span id="score">0</span><br>
-    Wave: <span id="wave">1</span>
-</div>
-
-<div id="deathScreen">
-    <h1 style="color: #f00;">SYSTEM CRITICAL: FAILED</h1>
-    <p>Final Score: <span id="finalScore">0</span></p>
-    <button onclick="location.reload()">REBOOT SYSTEM</button>
-</div>
-
-<canvas id="ctx"></canvas>
+    <div id="ui">
+        <div class="stat">Level: <span id="lvl">1</span></div>
+        <div class="stat">Attempts: <span id="deaths">0</span></div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
 
 <script>
-const canvas = document.getElementById('ctx');
-const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 800;
+    canvas.height = 500;
 
-let score = 0;
-let wave = 1;
-let gameRunning = true;
-let keys = {};
-let mouse = { x: 0, y: 0 };
+    let currentLevel = 1;
+    let deaths = 0;
+    let keys = {};
+    
+    let player = { x: 50, y: 400, w: 20, h: 20, vx: 0, vy: 0, jumping: false, color: '#0ff' };
+    let goal = { x: 750, y: 430, w: 30, h: 40 };
+    let platforms = [];
+    let enemies = [];
 
-// Game Objects
-let player = {
-    x: canvas.width / 2,
-    y: canvas.height / 2,
-    hp: 100,
-    size: 20,
-    speed: 5,
-    color: '#00ccff'
-};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
 
-let projectiles = [];
-let enemies = [];
-let particles = [];
-
-// Input Listeners
-window.addEventListener('keydown', e => keys[e.code] = true);
-window.addEventListener('keyup', e => keys[e.code] = false);
-window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-window.addEventListener('mousedown', () => { if(gameRunning) spawnProjectile(); });
-
-class Projectile {
-    constructor(x, y, targetX, targetY) {
-        this.x = x;
-        this.y = y;
-        this.size = 4;
-        let angle = Math.atan2(targetY - y, targetX - x);
-        this.vx = Math.cos(angle) * 10;
-        this.vy = Math.sin(angle) * 10;
-    }
-    update() {
-        this.x += this.vx;
-        this.y += this.vy;
-    }
-    draw() {
-        ctx.fillStyle = '#ff0';
-        ctx.fillRect(this.x, this.y, this.size, this.size);
-    }
-}
-
-class Enemy {
-    constructor() {
-        // Random spawn outside view
-        if(Math.random() > 0.5) {
-            this.x = Math.random() > 0.5 ? -50 : canvas.width + 50;
-            this.y = Math.random() * canvas.height;
-        } else {
-            this.x = Math.random() * canvas.width;
-            this.y = Math.random() > 0.5 ? -50 : canvas.height + 50;
-        }
-        this.hp = 1 + (wave * 0.5);
-        this.size = 25;
-        this.speed = 1.5 + (wave * 0.2);
-        this.color = `hsl(${280 + (wave * 10)}, 80%, 50%)`;
-    }
-    update() {
-        let angle = Math.atan2(player.y - this.y, player.x - this.x);
-        this.x += Math.cos(angle) * this.speed;
-        this.y += Math.sin(angle) * this.speed;
-    }
-    draw() {
-        ctx.strokeStyle = this.color;
-        ctx.lineWidth = 3;
-        ctx.strokeRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
-    }
-}
-
-function spawnProjectile() {
-    projectiles.push(new Projectile(player.x, player.y, mouse.x, mouse.y));
-}
-
-function createExplosion(x, y, color) {
-    for(let i=0; i<10; i++) {
-        particles.push({
-            x: x, y: y,
-            vx: (Math.random()-0.5)*10,
-            vy: (Math.random()-0.5)*10,
-            life: 20,
-            color: color
-        });
-    }
-}
-
-function update() {
-    if(!gameRunning) return;
-
-    // Player Movement
-    if(keys['KeyW']) player.y -= player.speed;
-    if(keys['KeyS']) player.y += player.speed;
-    if(keys['KeyA']) player.x -= player.speed;
-    if(keys['KeyD']) player.x += player.speed;
-
-    // Enemy Spawning
-    if(Math.random() < 0.02 + (wave * 0.005)) {
-        enemies.push(new Enemy());
-    }
-
-    // Wave Progression
-    wave = Math.floor(score / 500) + 1;
-    document.getElementById('wave').innerText = wave;
-
-    // Update Projectiles
-    projectiles.forEach((p, pi) => {
-        p.update();
-        if(p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
-            projectiles.splice(pi, 1);
-        }
-    });
-
-    // Update Enemies & Collisions
-    enemies.forEach((e, ei) => {
-        e.update();
+    function initLevel(lvl) {
+        player.x = 50;
+        player.y = 400;
+        player.vx = 0;
+        player.vy = 0;
         
-        // Player Collision
-        let dist = Math.hypot(player.x - e.x, player.y - e.y);
-        if(dist < 20) {
-            player.hp -= 0.5;
-            document.getElementById('hp').innerText = Math.ceil(player.hp);
-            if(player.hp <= 0) {
-                gameRunning = false;
-                document.getElementById('deathScreen').style.display = 'block';
-                document.getElementById('finalScore').innerText = score;
-            }
+        // Define floor
+        platforms = [{ x: 0, y: 470, w: 800, h: 30 }];
+        
+        // Procedural Platform Generation based on Level
+        for (let i = 0; i < Math.min(lvl + 2, 8); i++) {
+            platforms.push({
+                x: 150 + (i * 80),
+                y: 400 - (i * 40),
+                w: 100,
+                h: 15
+            });
         }
 
-        // Bullet Collision
-        projectiles.forEach((p, pi) => {
-            if(p.x > e.x - 15 && p.x < e.x + 15 && p.y > e.y - 15 && p.y < e.y + 15) {
-                e.hp--;
-                projectiles.splice(pi, 1);
-                if(e.hp <= 0) {
-                    createExplosion(e.x, e.y, e.color);
-                    enemies.splice(ei, 1);
-                    score += 10;
-                    document.getElementById('score').innerText = score;
-                }
+        // Enemy Generation: More enemies and faster speed per level
+        enemies = [];
+        const enemyCount = Math.floor(lvl / 2) + 1;
+        for (let i = 0; i < enemyCount; i++) {
+            enemies.push({
+                x: 200 + (Math.random() * 400),
+                y: 0, // Assigned in loop
+                w: 15,
+                h: 15,
+                vx: (2 + (lvl * 0.5)) * (Math.random() > 0.5 ? 1 : -1),
+                range: 150,
+                startX: 0
+            });
+        }
+        
+        // Place enemies on platforms
+        enemies.forEach((en, index) => {
+            let plat = platforms[index % platforms.length];
+            en.y = plat.y - en.h;
+            en.startX = plat.x;
+            en.range = plat.w;
+        });
+
+        // Place Goal on the furthest/highest platform
+        let lastPlat = platforms[platforms.length - 1];
+        goal.x = lastPlat.x + (lastPlat.w / 2) - 15;
+        goal.y = lastPlat.y - 40;
+
+        document.getElementById('lvl').innerText = lvl;
+    }
+
+    function update() {
+        // Physics
+        if (keys['ArrowLeft'] || keys['KeyA']) player.vx = -5;
+        else if (keys['ArrowRight'] || keys['KeyD']) player.vx = 5;
+        else player.vx *= 0.8;
+
+        if ((keys['ArrowUp'] || keys['Space'] || keys['KeyW']) && !player.jumping) {
+            player.vy = -12;
+            player.jumping = true;
+        }
+
+        player.vy += 0.6; // Gravity
+        player.x += player.vx;
+        player.y += player.vy;
+
+        // Platform Collision
+        player.jumping = true;
+        platforms.forEach(p => {
+            if (player.x < p.x + p.w && player.x + player.w > p.x &&
+                player.y + player.h > p.y && player.y + player.h < p.y + p.h + player.vy) {
+                player.y = p.y - player.h;
+                player.vy = 0;
+                player.jumping = false;
             }
         });
-    });
 
-    // Update Particles
-    particles.forEach((p, i) => {
-        p.x += p.vx; p.y += p.vy; p.life--;
-        if(p.life <= 0) particles.splice(i, 1);
-    });
-}
+        // Enemy Movement & Collision
+        enemies.forEach(en => {
+            en.x += en.vx;
+            if (en.x < en.startX || en.x > en.startX + en.range - en.w) en.vx *= -1;
 
-function draw() {
-    ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Motion blur effect
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (player.x < en.x + en.w && player.x + player.w > en.x &&
+                player.y < en.y + en.h && player.y + player.h > en.y) {
+                deaths++;
+                document.getElementById('deaths').innerText = deaths;
+                initLevel(currentLevel);
+            }
+        });
 
-    // Draw Player
-    ctx.fillStyle = player.color;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = player.color;
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, player.size/2, 0, Math.PI*2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+        // Goal Collision
+        if (player.x < goal.x + goal.w && player.x + player.w > goal.x &&
+            player.y < goal.y + goal.h && player.y + player.h > goal.y) {
+            currentLevel++;
+            initLevel(currentLevel);
+        }
 
-    projectiles.forEach(p => p.draw());
-    enemies.forEach(e => e.draw());
-    particles.forEach(p => {
-        ctx.fillStyle = p.color;
-        ctx.fillRect(p.x, p.y, 2, 2);
-    });
+        // Screen Bounds
+        if (player.y > canvas.height) initLevel(currentLevel);
+        if (player.x < 0) player.x = 0;
+        if (player.x > canvas.width - player.w) player.x = canvas.width - player.w;
+    }
 
-    update();
-    requestAnimationFrame(draw);
-}
+    function draw() {
+        ctx.fillStyle = '#050505';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-draw();
+        // Draw Goal
+        ctx.fillStyle = '#0f0';
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#0f0';
+        ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
+
+        // Draw Platforms
+        ctx.fillStyle = '#333';
+        ctx.shadowBlur = 0;
+        platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
+
+        // Draw Player
+        ctx.fillStyle = player.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = player.color;
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+
+        // Draw Enemies
+        ctx.fillStyle = '#f0f';
+        ctx.shadowColor = '#f0f';
+        enemies.forEach(en => ctx.fillRect(en.x, en.y, en.w, en.h));
+
+        update();
+        requestAnimationFrame(draw);
+    }
+
+    initLevel(currentLevel);
+    draw();
 </script>
 </body>
 </html>
