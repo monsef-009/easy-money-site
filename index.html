@@ -2,195 +2,215 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Infinite Dodge</title>
+    <title>Neon Survivor: Complex Edition</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            background: #111;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-        }
-        canvas {
-            border: 2px solid #444;
-            background: #000;
-            cursor: none;
-        }
-        #ui {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            pointer-events: none;
-        }
-        .game-over {
-            position: absolute;
-            text-align: center;
-            display: none;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-            background: #00ffcc;
-            border: none;
-            border-radius: 5px;
-            font-weight: bold;
-        }
+        body { margin: 0; background: #050505; color: #fff; font-family: 'Courier New', Courier, monospace; overflow: hidden; }
+        canvas { display: block; margin: 0 auto; background: #000; cursor: crosshair; }
+        #stats { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border: 1px solid #333; pointer-events: none; }
+        .high-score { color: #0f0; }
+        #deathScreen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; display: none; background: rgba(0,0,0,0.9); padding: 40px; border: 2px solid #f00; }
+        button { padding: 10px 20px; background: #f00; color: #fff; border: none; cursor: pointer; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <div id="ui">
-        <div>Score: <span id="score">0</span></div>
-        <div>Difficulty: <span id="difficulty">1</span></div>
-    </div>
+<div id="stats">
+    Health: <span id="hp">100</span>%<br>
+    Score: <span id="score">0</span><br>
+    Wave: <span id="wave">1</span>
+</div>
 
-    <div class="game-over" id="gameOverScreen">
-        <h1>GAME OVER</h1>
-        <p>Final Score: <span id="finalScore">0</span></p>
-        <button onclick="resetGame()">Try Again</button>
-    </div>
+<div id="deathScreen">
+    <h1 style="color: #f00;">SYSTEM CRITICAL: FAILED</h1>
+    <p>Final Score: <span id="finalScore">0</span></p>
+    <button onclick="location.reload()">REBOOT SYSTEM</button>
+</div>
 
-    <canvas id="gameCanvas"></canvas>
+<canvas id="ctx"></canvas>
 
 <script>
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    const scoreElement = document.getElementById('score');
-    const diffElement = document.getElementById('difficulty');
-    const gameOverScreen = document.getElementById('gameOverScreen');
-    const finalScoreElement = document.getElementById('finalScore');
+const canvas = document.getElementById('ctx');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-    // Set canvas size
-    canvas.width = 600;
-    canvas.height = 400;
+let score = 0;
+let wave = 1;
+let gameRunning = true;
+let keys = {};
+let mouse = { x: 0, y: 0 };
 
-    let score = 0;
-    let gameActive = true;
-    let enemies = [];
-    let frameCount = 0;
-    let difficultyMultiplier = 1;
+// Game Objects
+let player = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    hp: 100,
+    size: 20,
+    speed: 5,
+    color: '#00ccff'
+};
 
-    const player = {
-        x: 300,
-        y: 200,
-        size: 15,
-        color: '#00ffcc'
-    };
+let projectiles = [];
+let enemies = [];
+let particles = [];
 
-    // Track mouse movement
-    canvas.addEventListener('mousemove', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        player.x = e.clientX - rect.left;
-        player.y = e.clientY - rect.top;
+// Input Listeners
+window.addEventListener('keydown', e => keys[e.code] = true);
+window.addEventListener('keyup', e => keys[e.code] = false);
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mousedown', () => { if(gameRunning) spawnProjectile(); });
+
+class Projectile {
+    constructor(x, y, targetX, targetY) {
+        this.x = x;
+        this.y = y;
+        this.size = 4;
+        let angle = Math.atan2(targetY - y, targetX - x);
+        this.vx = Math.cos(angle) * 10;
+        this.vy = Math.sin(angle) * 10;
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+    }
+    draw() {
+        ctx.fillStyle = '#ff0';
+        ctx.fillRect(this.x, this.y, this.size, this.size);
+    }
+}
+
+class Enemy {
+    constructor() {
+        // Random spawn outside view
+        if(Math.random() > 0.5) {
+            this.x = Math.random() > 0.5 ? -50 : canvas.width + 50;
+            this.y = Math.random() * canvas.height;
+        } else {
+            this.x = Math.random() * canvas.width;
+            this.y = Math.random() > 0.5 ? -50 : canvas.height + 50;
+        }
+        this.hp = 1 + (wave * 0.5);
+        this.size = 25;
+        this.speed = 1.5 + (wave * 0.2);
+        this.color = `hsl(${280 + (wave * 10)}, 80%, 50%)`;
+    }
+    update() {
+        let angle = Math.atan2(player.y - this.y, player.x - this.x);
+        this.x += Math.cos(angle) * this.speed;
+        this.y += Math.sin(angle) * this.speed;
+    }
+    draw() {
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(this.x - this.size/2, this.y - this.size/2, this.size, this.size);
+    }
+}
+
+function spawnProjectile() {
+    projectiles.push(new Projectile(player.x, player.y, mouse.x, mouse.y));
+}
+
+function createExplosion(x, y, color) {
+    for(let i=0; i<10; i++) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random()-0.5)*10,
+            vy: (Math.random()-0.5)*10,
+            life: 20,
+            color: color
+        });
+    }
+}
+
+function update() {
+    if(!gameRunning) return;
+
+    // Player Movement
+    if(keys['KeyW']) player.y -= player.speed;
+    if(keys['KeyS']) player.y += player.speed;
+    if(keys['KeyA']) player.x -= player.speed;
+    if(keys['KeyD']) player.x += player.speed;
+
+    // Enemy Spawning
+    if(Math.random() < 0.02 + (wave * 0.005)) {
+        enemies.push(new Enemy());
+    }
+
+    // Wave Progression
+    wave = Math.floor(score / 500) + 1;
+    document.getElementById('wave').innerText = wave;
+
+    // Update Projectiles
+    projectiles.forEach((p, pi) => {
+        p.update();
+        if(p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
+            projectiles.splice(pi, 1);
+        }
     });
 
-    class Enemy {
-        constructor() {
-            this.size = Math.random() * 20 + 10;
-            // Spawn from edges
-            if (Math.random() > 0.5) {
-                this.x = Math.random() > 0.5 ? -this.size : canvas.width + this.size;
-                this.y = Math.random() * canvas.height;
-            } else {
-                this.x = Math.random() * canvas.width;
-                this.y = Math.random() > 0.5 ? -this.size : canvas.height + this.size;
-            }
-            
-            // Calculate speed based on difficulty
-            const angle = Math.atan2(player.y - this.y, player.x - this.x);
-            const speed = (Math.random() * 2 + 1) * difficultyMultiplier;
-            this.vx = Math.cos(angle) * speed;
-            this.vy = Math.sin(angle) * speed;
-            this.color = `hsl(${Math.random() * 360}, 70%, 60%)`;
-        }
-
-        update() {
-            this.x += this.vx;
-            this.y += this.vy;
-        }
-
-        draw() {
-            ctx.fillStyle = this.color;
-            ctx.fillRect(this.x, this.y, this.size, this.size);
-        }
-    }
-
-    function spawnEnemy() {
-        // Spawn rate increases as difficulty increases
-        const spawnInterval = Math.max(5, 30 - Math.floor(difficultyMultiplier * 2));
-        if (frameCount % spawnInterval === 0) {
-            enemies.push(new Enemy());
-        }
-    }
-
-    function checkCollision(enemy) {
-        return (
-            player.x < enemy.x + enemy.size &&
-            player.x + player.size > enemy.x &&
-            player.y < enemy.y + enemy.size &&
-            player.y + player.size > enemy.y
-        );
-    }
-
-    function resetGame() {
-        score = 0;
-        difficultyMultiplier = 1;
-        enemies = [];
-        gameActive = true;
-        frameCount = 0;
-        gameOverScreen.style.display = 'none';
-        loop();
-    }
-
-    function loop() {
-        if (!gameActive) return;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Update Difficulty and Score
-        frameCount++;
-        score++;
-        difficultyMultiplier = 1 + (score / 1000); // Increases every frame
+    // Update Enemies & Collisions
+    enemies.forEach((e, ei) => {
+        e.update();
         
-        scoreElement.innerText = score;
-        diffElement.innerText = difficultyMultiplier.toFixed(2);
-
-        // Player
-        ctx.fillStyle = player.color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = player.color;
-        ctx.fillRect(player.x - player.size/2, player.y - player.size/2, player.size, player.size);
-        ctx.shadowBlur = 0;
-
-        // Enemies
-        spawnEnemy();
-        for (let i = enemies.length - 1; i >= 0; i--) {
-            const e = enemies[i];
-            e.update();
-            e.draw();
-
-            if (checkCollision(e)) {
-                gameActive = false;
-                finalScoreElement.innerText = score;
-                gameOverScreen.style.display = 'block';
-            }
-
-            // Remove off-screen enemies
-            if (e.x < -100 || e.x > canvas.width + 100 || e.y < -100 || e.y > canvas.height + 100) {
-                enemies.splice(i, 1);
+        // Player Collision
+        let dist = Math.hypot(player.x - e.x, player.y - e.y);
+        if(dist < 20) {
+            player.hp -= 0.5;
+            document.getElementById('hp').innerText = Math.ceil(player.hp);
+            if(player.hp <= 0) {
+                gameRunning = false;
+                document.getElementById('deathScreen').style.display = 'block';
+                document.getElementById('finalScore').innerText = score;
             }
         }
 
-        requestAnimationFrame(loop);
-    }
+        // Bullet Collision
+        projectiles.forEach((p, pi) => {
+            if(p.x > e.x - 15 && p.x < e.x + 15 && p.y > e.y - 15 && p.y < e.y + 15) {
+                e.hp--;
+                projectiles.splice(pi, 1);
+                if(e.hp <= 0) {
+                    createExplosion(e.x, e.y, e.color);
+                    enemies.splice(ei, 1);
+                    score += 10;
+                    document.getElementById('score').innerText = score;
+                }
+            }
+        });
+    });
 
-    loop();
+    // Update Particles
+    particles.forEach((p, i) => {
+        p.x += p.vx; p.y += p.vy; p.life--;
+        if(p.life <= 0) particles.splice(i, 1);
+    });
+}
+
+function draw() {
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; // Motion blur effect
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Player
+    ctx.fillStyle = player.color;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = player.color;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size/2, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    projectiles.forEach(p => p.draw());
+    enemies.forEach(e => e.draw());
+    particles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(p.x, p.y, 2, 2);
+    });
+
+    update();
+    requestAnimationFrame(draw);
+}
+
+draw();
 </script>
 </body>
 </html>
