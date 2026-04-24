@@ -1,159 +1,196 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>Catch Master</title>
-  <style>
-    body {
-      text-align: center;
-      background: #111;
-      color: white;
-      font-family: Arial;
-    }
-    canvas {
-      background: #222;
-      display: none;
-      margin: auto;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 18px;
-      cursor: pointer;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Dodge</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #111;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        canvas {
+            border: 2px solid #444;
+            background: #000;
+            cursor: none;
+        }
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            pointer-events: none;
+        }
+        .game-over {
+            position: absolute;
+            text-align: center;
+            display: none;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background: #00ffcc;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
 
-<h1>🎮 Catch Master</h1>
+    <div id="ui">
+        <div>Score: <span id="score">0</span></div>
+        <div>Difficulty: <span id="difficulty">1</span></div>
+    </div>
 
-<div id="menu">
-  <button onclick="startGame()">Start Game</button>
-</div>
+    <div class="game-over" id="gameOverScreen">
+        <h1>GAME OVER</h1>
+        <p>Final Score: <span id="finalScore">0</span></p>
+        <button onclick="resetGame()">Try Again</button>
+    </div>
 
-<p>Score: <span id="score">0</span></p>
-<p>Lives: <span id="lives">3</span></p>
-<p>High Score: <span id="high">0</span></p>
-
-<canvas id="game" width="400" height="500"></canvas>
+    <canvas id="gameCanvas"></canvas>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreElement = document.getElementById('score');
+    const diffElement = document.getElementById('difficulty');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const finalScoreElement = document.getElementById('finalScore');
 
-let player, blocks, score, lives, speed, gameRunning;
-let highScore = localStorage.getItem("high") || 0;
-document.getElementById("high").innerText = highScore;
+    // Set canvas size
+    canvas.width = 600;
+    canvas.height = 400;
 
-function startGame() {
-  document.getElementById("menu").style.display = "none";
-  canvas.style.display = "block";
+    let score = 0;
+    let gameActive = true;
+    let enemies = [];
+    let frameCount = 0;
+    let difficultyMultiplier = 1;
 
-  player = { x: 180, y: 460, width: 40, height: 20, speed: 7 };
-  blocks = [];
-  score = 0;
-  lives = 3;
-  speed = 2;
-  gameRunning = true;
+    const player = {
+        x: 300,
+        y: 200,
+        size: 15,
+        color: '#00ffcc'
+    };
 
-  updateUI();
-  gameLoop();
-  setInterval(createBlock, 800);
-}
+    // Track mouse movement
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        player.x = e.clientX - rect.left;
+        player.y = e.clientY - rect.top;
+    });
 
-function createBlock() {
-  if (!gameRunning) return;
+    class Enemy {
+        constructor() {
+            this.size = Math.random() * 20 + 10;
+            // Spawn from edges
+            if (Math.random() > 0.5) {
+                this.x = Math.random() > 0.5 ? -this.size : canvas.width + this.size;
+                this.y = Math.random() * canvas.height;
+            } else {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() > 0.5 ? -this.size : canvas.height + this.size;
+            }
+            
+            // Calculate speed based on difficulty
+            const angle = Math.atan2(player.y - this.y, player.x - this.x);
+            const speed = (Math.random() * 2 + 1) * difficultyMultiplier;
+            this.vx = Math.cos(angle) * speed;
+            this.vy = Math.sin(angle) * speed;
+            this.color = `hsl(${Math.random() * 360}, 70%, 60%)`;
+        }
 
-  let type = Math.random();
-  blocks.push({
-    x: Math.random() * 360,
-    y: 0,
-    size: 20,
-    speed: speed,
-    type: type < 0.8 ? "normal" : "gold"
-  });
-}
+        update() {
+            this.x += this.vx;
+            this.y += this.vy;
+        }
 
-function updateUI() {
-  document.getElementById("score").innerText = score;
-  document.getElementById("lives").innerText = lives;
-}
-
-function drawPlayer() {
-  ctx.fillStyle = "lime";
-  ctx.fillRect(player.x, player.y, player.width, player.height);
-}
-
-function drawBlocks() {
-  blocks.forEach(block => {
-    ctx.fillStyle = block.type === "gold" ? "yellow" : "red";
-    ctx.fillRect(block.x, block.y, block.size, block.size);
-  });
-}
-
-function updateBlocks() {
-  blocks.forEach((block, index) => {
-    block.y += block.speed;
-
-    // catch
-    if (
-      block.x < player.x + player.width &&
-      block.x + block.size > player.x &&
-      block.y < player.y + player.height &&
-      block.y + block.size > player.y
-    ) {
-      score += block.type === "gold" ? 5 : 1;
-      blocks.splice(index, 1);
-      updateUI();
+        draw() {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.size, this.size);
+        }
     }
 
-    // missed
-    if (block.y > canvas.height) {
-      lives--;
-      blocks.splice(index, 1);
-      updateUI();
-
-      if (lives <= 0) {
-        endGame();
-      }
+    function spawnEnemy() {
+        // Spawn rate increases as difficulty increases
+        const spawnInterval = Math.max(5, 30 - Math.floor(difficultyMultiplier * 2));
+        if (frameCount % spawnInterval === 0) {
+            enemies.push(new Enemy());
+        }
     }
-  });
-}
 
-function gameLoop() {
-  if (!gameRunning) return;
+    function checkCollision(enemy) {
+        return (
+            player.x < enemy.x + enemy.size &&
+            player.x + player.size > enemy.x &&
+            player.y < enemy.y + enemy.size &&
+            player.y + player.size > enemy.y
+        );
+    }
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function resetGame() {
+        score = 0;
+        difficultyMultiplier = 1;
+        enemies = [];
+        gameActive = true;
+        frameCount = 0;
+        gameOverScreen.style.display = 'none';
+        loop();
+    }
 
-  drawPlayer();
-  drawBlocks();
-  updateBlocks();
+    function loop() {
+        if (!gameActive) return;
 
-  // increase difficulty
-  speed += 0.001;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  requestAnimationFrame(gameLoop);
-}
+        // Update Difficulty and Score
+        frameCount++;
+        score++;
+        difficultyMultiplier = 1 + (score / 1000); // Increases every frame
+        
+        scoreElement.innerText = score;
+        diffElement.innerText = difficultyMultiplier.toFixed(2);
 
-function endGame() {
-  gameRunning = false;
+        // Player
+        ctx.fillStyle = player.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = player.color;
+        ctx.fillRect(player.x - player.size/2, player.y - player.size/2, player.size, player.size);
+        ctx.shadowBlur = 0;
 
-  if (score > highScore) {
-    localStorage.setItem("high", score);
-  }
+        // Enemies
+        spawnEnemy();
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            const e = enemies[i];
+            e.update();
+            e.draw();
 
-  alert("Game Over! Score: " + score);
-  location.reload();
-}
+            if (checkCollision(e)) {
+                gameActive = false;
+                finalScoreElement.innerText = score;
+                gameOverScreen.style.display = 'block';
+            }
 
-// controls
-document.addEventListener("keydown", e => {
-  if (e.key === "ArrowLeft" && player.x > 0) {
-    player.x -= player.speed;
-  }
-  if (e.key === "ArrowRight" && player.x < canvas.width - player.width) {
-    player.x += player.speed;
-  }
-});
+            // Remove off-screen enemies
+            if (e.x < -100 || e.x > canvas.width + 100 || e.y < -100 || e.y > canvas.height + 100) {
+                enemies.splice(i, 1);
+            }
+        }
+
+        requestAnimationFrame(loop);
+    }
+
+    loop();
 </script>
-
 </body>
 </html>
