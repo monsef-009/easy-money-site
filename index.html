@@ -2,353 +2,318 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>VOID-WALKER: INFINITE ODYSSEY</title>
+    <title>VOID-RUNNER: CORE ENGINE</title>
     <style>
-        :root { --neon-blue: #00f2ff; --neon-red: #ff0055; --bg: #020205; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: 'Segoe UI', sans-serif; color: white; }
-        canvas { display: block; filter: contrast(1.2) brightness(1.1); }
-        
-        /* UI LAYOUT */
-        #hud { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; padding: 20px; box-sizing: border-box; display: flex; justify-content: space-between; align-items: flex-start; }
-        .panel { background: rgba(0, 20, 40, 0.7); border: 1px solid var(--neon-blue); padding: 15px; border-radius: 5px; pointer-events: auto; backdrop-filter: blur(5px); }
-        #log { position: absolute; bottom: 20px; left: 20px; width: 300px; height: 150px; overflow-y: auto; font-size: 12px; color: #aaa; }
-        .bar-container { width: 200px; height: 10px; background: #333; margin-top: 5px; border-radius: 5px; overflow: hidden; }
-        .bar-fill { height: 100%; transition: width 0.3s; }
-        #hp-fill { background: var(--neon-red); box-shadow: 0 0 10px var(--neon-red); }
-        #exp-fill { background: #ffcc00; }
-        
-        /* SCREENS */
-        #overlay { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.8); z-index: 100; flex-direction: column; }
-        .hidden { display: none !important; }
-        h1 { font-size: 3rem; color: var(--neon-blue); text-shadow: 0 0 20px var(--neon-blue); margin: 0; }
-        .btn { margin-top: 20px; padding: 15px 40px; border: 2px solid var(--neon-blue); color: var(--neon-blue); cursor: pointer; font-weight: bold; text-transform: uppercase; transition: 0.3s; }
-        .btn:hover { background: var(--neon-blue); color: black; }
+        :root { --neon: #00f2ff; --bg: #050508; --danger: #ff0055; }
+        body { margin: 0; background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+        #game-container { display: grid; grid-template-columns: 1fr 300px; height: 100vh; }
+        canvas { width: 100%; height: 100%; background: #000; image-rendering: pixelated; }
+        #sidebar { background: #0a0a12; border-left: 2px solid #1a1a2e; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .stat-bar { background: #222; height: 20px; border-radius: 10px; overflow: hidden; border: 1px solid #444; }
+        .fill { height: 100%; transition: width 0.3s ease; }
+        #hp-fill { background: var(--danger); }
+        #xp-fill { background: var(--neon); }
+        .log { flex-grow: 1; background: #000; border: 1px solid #1a1a2e; padding: 10px; font-size: 12px; overflow-y: auto; color: #aaa; font-family: monospace; }
+        .upgrade-btn { background: #1a1a2e; border: 1px solid var(--neon); color: var(--neon); padding: 8px; cursor: pointer; transition: 0.2s; }
+        .upgrade-btn:hover { background: var(--neon); color: #000; }
+        .modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.95); border: 2px solid var(--neon); padding: 40px; text-align: center; display: none; z-index: 100; }
     </style>
 </head>
 <body>
 
-    <div id="overlay">
-        <h1>VOID-WALKER</h1>
-        <p>Master the stars. Survive the deep.</p>
-        <div class="btn" onclick="Game.start()">Initialize Drive</div>
-    </div>
-
-    <div id="hud" class="hidden">
-        <div class="panel">
-            <strong>COMMANDER</strong><br>
-            Level: <span id="lvl-val">1</span>
-            <div class="bar-container"><div id="hp-fill" class="bar-fill" style="width: 100%"></div></div>
-            <div class="bar-container"><div id="exp-fill" class="bar-fill" style="width: 0%"></div></div>
-            <div style="font-size: 10px; margin-top: 5px;">HULL INTEGRITY / EXPERIENCE</div>
+<div id="game-container">
+    <canvas id="stage"></canvas>
+    <div id="sidebar">
+        <h2>VOID-RUNNER</h2>
+        <div>
+            <label>INTEGRITY (HP)</label>
+            <div class="stat-bar"><div id="hp-fill" class="fill" style="width: 100%"></div></div>
         </div>
-        
-        <div class="panel">
-            <strong>SECTOR DATA</strong><br>
-            Enemies Defeated: <span id="kills">0</span><br>
-            Coordinates: <span id="coords">0, 0</span>
+        <div>
+            <label>DATA CORE (XP)</label>
+            <div class="stat-bar"><div id="xp-fill" class="fill" style="width: 0%"></div></div>
         </div>
+        <div id="stats-text">
+            Level: 1<br>
+            Nanites: 0<br>
+            Sector Depth: 1
+        </div>
+        <div class="log" id="game-log">Initializing System...<br>Welcome, Operative.</div>
+        <button class="upgrade-btn" onclick="upgrade('atk')">Upgrade Attack (50 N)</button>
+        <button class="upgrade-btn" onclick="upgrade('def')">Upgrade Defense (50 N)</button>
     </div>
+</div>
 
-    <div id="log" class="panel hidden"></div>
-
-    <canvas id="gameCanvas"></canvas>
+<div id="modal" class="modal">
+    <h1 id="modal-title">SECTOR CLEAR</h1>
+    <p id="modal-text"></p>
+    <button class="upgrade-btn" onclick="closeModal()">CONTINUE ASCENSION</button>
+</div>
 
 <script>
 /**
- * VOID-WALKER ENGINE v1.0
- * Features: Spatial Partitioning, Procedural Stars, 
- * Advanced Trigonometric Projectiles, State Management.
+ * VOID-RUNNER ENGINE v1.0.4
+ * A complex procedural dungeon crawler with tactical state management.
  */
 
-const Game = {
-    canvas: document.getElementById('gameCanvas'),
-    ctx: null,
-    active: false,
-    width: window.innerWidth,
-    height: window.innerHeight,
-    
-    // Core Game Data
-    player: null,
-    entities: [],
-    particles: [],
-    stars: [],
-    input: { w: false, a: false, s: false, d: false, mouse: false, mx: 0, my: 0 },
-    stats: { kills: 0, exp: 0, lvl: 1 },
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const log = document.getElementById('game-log');
 
-    start() {
-        document.getElementById('overlay').classList.add('hidden');
-        document.getElementById('hud').classList.remove('hidden');
-        document.getElementById('log').classList.remove('hidden');
-        this.ctx = this.canvas.getContext('2d');
-        this.canvas.width = this.width;
-        this.canvas.height = this.height;
-        this.player = new Player(this.width / 2, this.height / 2);
-        this.generateStars();
-        this.active = true;
-        this.log("Engine online. Welcome back, Commander.");
-        this.loop();
-    },
-
-    log(msg) {
-        const logBox = document.getElementById('log');
-        logBox.innerHTML += `<div>> ${msg}</div>`;
-        logBox.scrollTop = logBox.scrollHeight;
-    },
-
-    generateStars() {
-        for(let i=0; i<400; i++) {
-            this.stars.push({
-                x: Math.random() * this.width,
-                y: Math.random() * this.height,
-                size: Math.random() * 2,
-                p: Math.random() * 0.5 // Parallax factor
-            });
-        }
-    },
-
-    update() {
-        if(!this.active) return;
-        
-        this.player.update(this.input);
-        
-        // Handle Entities (Enemies, Bullets)
-        this.entities.forEach((ent, i) => {
-            ent.update();
-            if(ent.dead) this.entities.splice(i, 1);
-        });
-
-        // Spawn Enemies
-        if(Math.random() < 0.02 + (this.stats.lvl * 0.005)) {
-            this.entities.push(new Enemy());
-        }
-
-        // Particle System
-        this.particles.forEach((p, i) => {
-            p.update();
-            if(p.life <= 0) this.particles.splice(i, 1);
-        });
-
-        // Difficulty Scaling
-        if(this.stats.exp >= this.stats.lvl * 100) {
-            this.stats.lvl++;
-            this.stats.exp = 0;
-            this.player.hp = Math.min(this.player.hp + 20, 100);
-            this.log(`LEVEL UP: You are now Level ${this.stats.lvl}. Hull repaired.`);
-            document.getElementById('lvl-val').innerText = this.stats.lvl;
-        }
-
-        document.getElementById('hp-fill').style.width = this.player.hp + "%";
-        document.getElementById('exp-fill').style.width = (this.stats.exp / (this.stats.lvl * 100) * 100) + "%";
-    },
-
-    draw() {
-        const c = this.ctx;
-        c.fillStyle = '#020205';
-        c.fillRect(0, 0, this.width, this.height);
-
-        // Draw Stars (Parallax)
-        c.fillStyle = "white";
-        this.stars.forEach(s => {
-            let px = (s.x - (this.player.x * s.p)) % this.width;
-            let py = (s.y - (this.player.y * s.p)) % this.height;
-            if(px < 0) px += this.width;
-            if(py < 0) py += this.height;
-            c.fillRect(px, py, s.size, s.size);
-        });
-
-        this.particles.forEach(p => p.draw(c));
-        this.entities.forEach(ent => ent.draw(c));
-        this.player.draw(c);
-    },
-
-    loop() {
-        this.update();
-        this.draw();
-        requestAnimationFrame(() => this.loop());
-    }
+// Game State
+const GS = {
+    tileSize: 40,
+    gridW: 0,
+    gridH: 0,
+    player: { x: 2, y: 2, hp: 100, maxHp: 100, atk: 10, def: 5, xp: 0, lvl: 1, nanites: 0 },
+    enemies: [],
+    map: [],
+    fog: [],
+    depth: 1,
+    turn: 'player'
 };
 
-/**
- * PLAYER CLASS
- */
-class Player {
-    constructor(x, y) {
-        this.x = x; this.y = y;
-        this.rot = 0;
-        this.hp = 100;
-        this.speed = 0;
-        this.accel = 0.15;
-        this.friction = 0.98;
-        this.cooldown = 0;
-    }
+function init() {
+    resize();
+    generateSector();
+    window.addEventListener('keydown', handleInput);
+    render();
+}
 
-    update(input) {
-        // Rotation follows mouse
-        let dx = input.mx - this.x;
-        let dy = input.my - this.y;
-        this.rot = Math.atan2(dy, dx);
+function resize() {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    GS.gridW = Math.floor(canvas.width / GS.tileSize);
+    GS.gridH = Math.floor(canvas.height / GS.tileSize);
+}
 
-        if(input.w) this.speed += this.accel;
-        if(input.s) this.speed -= this.accel;
-        
-        this.speed *= this.friction;
-        this.x += Math.cos(this.rot) * this.speed;
-        this.y += Math.sin(this.rot) * this.speed;
-
-        // Screen wrap
-        if(this.x < 0) this.x = Game.width;
-        if(this.x > Game.width) this.x = 0;
-        if(this.y < 0) this.y = Game.height;
-        if(this.y > Game.height) this.y = 0;
-
-        if(input.mouse && this.cooldown <= 0) {
-            this.shoot();
-            this.cooldown = 10;
+function generateSector() {
+    GS.map = [];
+    GS.fog = [];
+    GS.enemies = [];
+    
+    // Fill map with walls
+    for (let y = 0; y < GS.gridH; y++) {
+        GS.map[y] = [];
+        GS.fog[y] = [];
+        for (let x = 0; x < GS.gridW; x++) {
+            GS.map[y][x] = (Math.random() < 0.18) ? 1 : 0; // 1 = Wall
+            GS.fog[y][x] = 1; // 1 = Hidden
         }
-        if(this.cooldown > 0) this.cooldown--;
     }
 
-    shoot() {
-        Game.entities.push(new Bullet(this.x, this.y, this.rot, true));
-    }
+    // Ensure player start is clear
+    GS.map[GS.player.y][GS.player.x] = 0;
+    
+    // Exit Portal
+    GS.map[GS.gridH - 3][GS.gridW - 3] = 2; // 2 = Portal
 
-    draw(c) {
-        c.save();
-        c.translate(this.x, this.y);
-        c.rotate(this.rot);
-        
-        // Ship Body
-        c.strokeStyle = '#00f2ff';
-        c.lineWidth = 2;
-        c.shadowBlur = 10;
-        c.shadowColor = '#00f2ff';
-        c.beginPath();
-        c.moveTo(15, 0);
-        c.lineTo(-10, -10);
-        c.lineTo(-10, 10);
-        c.closePath();
-        c.stroke();
-        
-        // Engine Flame
-        if(Game.input.w) {
-            c.fillStyle = '#ffaa00';
-            c.fillRect(-15, -2, 5, 4);
+    // Spawn Enemies
+    const count = 5 + GS.depth;
+    for(let i=0; i<count; i++) {
+        let ex = Math.floor(Math.random() * GS.gridW);
+        let ey = Math.floor(Math.random() * GS.gridH);
+        if(GS.map[ey][ex] === 0 && (ex > 5 || ey > 5)) {
+            GS.enemies.push({
+                x: ex, y: ey, 
+                hp: 20 + (GS.depth * 10), 
+                atk: 5 + (GS.depth * 2),
+                type: Math.random() > 0.8 ? 'ELITE' : 'DRONE'
+            });
         }
-        
-        c.restore();
+    }
+    updateFog();
+}
+
+function updateFog() {
+    for(let y = GS.player.y-3; y <= GS.player.y+3; y++) {
+        for(let x = GS.player.x-3; x <= GS.player.x+3; x++) {
+            if(GS.map[y] && GS.map[y][x] !== undefined) GS.fog[y][x] = 0;
+        }
     }
 }
 
-/**
- * ENEMY CLASS (AI)
- */
-class Enemy {
-    constructor() {
-        this.x = Math.random() * Game.width;
-        this.y = Math.random() * Game.height;
-        this.hp = 2 + (Game.stats.lvl * 0.5);
-        this.dead = false;
-        this.speed = 1 + Math.random();
-    }
+function handleInput(e) {
+    if(GS.turn !== 'player') return;
 
-    update() {
-        let dx = Game.player.x - this.x;
-        let dy = Game.player.y - this.y;
-        let dist = Math.sqrt(dx*dx + dy*dy);
-        let angle = Math.atan2(dy, dx);
+    let dx = 0, dy = 0;
+    if(e.key === 'ArrowUp' || e.key === 'w') dy = -1;
+    if(e.key === 'ArrowDown' || e.key === 's') dy = 1;
+    if(e.key === 'ArrowLeft' || e.key === 'a') dx = -1;
+    if(e.key === 'ArrowRight' || e.key === 'd') dx = 1;
 
-        this.x += Math.cos(angle) * this.speed;
-        this.y += Math.sin(angle) * this.speed;
-
-        if(dist < 20) {
-            Game.player.hp -= 0.1;
-            if(Game.player.hp <= 0) location.reload();
-        }
-    }
-
-    draw(c) {
-        c.fillStyle = '#ff0055';
-        c.shadowBlur = 15;
-        c.shadowColor = '#ff0055';
-        c.fillRect(this.x - 8, this.y - 8, 16, 16);
+    if(dx !== 0 || dy !== 0) {
+        attemptMove(dx, dy);
     }
 }
 
-/**
- * BULLET CLASS
- */
-class Bullet {
-    constructor(x, y, rot, isPlayer) {
-        this.x = x; this.y = y;
-        this.vx = Math.cos(rot) * 8;
-        this.vy = Math.sin(rot) * 8;
-        this.life = 100;
-        this.dead = false;
-        this.isPlayer = isPlayer;
+function attemptMove(dx, dy) {
+    const nx = GS.player.x + dx;
+    const ny = GS.player.y + dy;
+
+    // Boundary check
+    if(nx < 0 || nx >= GS.gridW || ny < 0 || ny >= GS.gridH) return;
+
+    // Wall check
+    if(GS.map[ny][nx] === 1) return;
+
+    // Portal check
+    if(GS.map[ny][nx] === 2) {
+        nextSector();
+        return;
     }
 
-    update() {
-        this.x += this.vx;
-        this.y += this.vy;
-        this.life--;
-        if(this.life <= 0) this.dead = true;
+    // Enemy check (Combat)
+    const enemy = GS.enemies.find(e => e.x === nx && e.y === ny);
+    if(enemy) {
+        combat(enemy);
+    } else {
+        GS.player.x = nx;
+        GS.player.y = ny;
+        updateFog();
+    }
 
-        // Collision Logic
-        Game.entities.forEach(ent => {
-            if(ent instanceof Enemy && !this.dead) {
-                let d = Math.hypot(this.x - ent.x, this.y - ent.y);
-                if(d < 15) {
-                    ent.hp--;
-                    this.dead = true;
-                    if(ent.hp <= 0) {
-                        ent.dead = true;
-                        Game.stats.kills++;
-                        Game.stats.exp += 25;
-                        document.getElementById('kills').innerText = Game.stats.kills;
-                        explode(ent.x, ent.y, '#ff0055');
-                    }
-                }
+    GS.turn = 'enemy';
+    setTimeout(enemyTurn, 100);
+}
+
+function combat(enemy) {
+    const dmg = Math.max(1, GS.player.atk - Math.floor(Math.random() * 5));
+    enemy.hp -= dmg;
+    addLog(`You strike ${enemy.type} for ${dmg} damage.`, '#00f2ff');
+    
+    if(enemy.hp <= 0) {
+        const index = GS.enemies.indexOf(enemy);
+        GS.enemies.splice(index, 1);
+        GS.player.xp += 25;
+        GS.player.nanites += 15;
+        addLog(`Enemy Neutralized. +25 Data, +15 Nanites.`, '#0f0');
+        checkLevelUp();
+    }
+}
+
+function enemyTurn() {
+    GS.enemies.forEach(e => {
+        const dist = Math.hypot(e.x - GS.player.x, e.y - GS.player.y);
+        if(dist < 5) {
+            // Move toward player
+            let dx = e.x < GS.player.x ? 1 : (e.x > GS.player.x ? -1 : 0);
+            let dy = e.y < GS.player.y ? 1 : (e.y > GS.player.y ? -1 : 0);
+            
+            if(e.x + dx === GS.player.x && e.y + dy === GS.player.y) {
+                // Attack
+                const dmg = Math.max(1, e.atk - (GS.player.def / 2));
+                GS.player.hp -= Math.floor(dmg);
+                addLog(`Warning: ${e.type} hit you for ${Math.floor(dmg)} damage!`, '#f05');
+            } else if (GS.map[e.y + dy][e.x + dx] === 0) {
+                e.x += dx;
+                e.y += dy;
             }
-        });
+        }
+    });
+
+    if(GS.player.hp <= 0) {
+        alert("SYSTEM PERMANENTLY OFFLINE. REBOOTING...");
+        location.reload();
     }
 
-    draw(c) {
-        c.fillStyle = '#ffff00';
-        c.fillRect(this.x-2, this.y-2, 4, 4);
+    GS.turn = 'player';
+    updateUI();
+    render();
+}
+
+function addLog(msg, color) {
+    const entry = document.createElement('div');
+    entry.style.color = color || '#aaa';
+    entry.innerHTML = `> ${msg}`;
+    log.prepend(entry);
+}
+
+function updateUI() {
+    document.getElementById('hp-fill').style.width = `${(GS.player.hp / GS.player.maxHp) * 100}%`;
+    document.getElementById('xp-fill').style.width = `${(GS.player.xp % 100)}%`;
+    document.getElementById('stats-text').innerHTML = `
+        Level: ${GS.player.lvl}<br>
+        Nanites: ${GS.player.nanites}<br>
+        Sector Depth: ${GS.depth}
+    `;
+}
+
+function checkLevelUp() {
+    if(GS.player.xp >= GS.player.lvl * 100) {
+        GS.player.lvl++;
+        GS.player.maxHp += 20;
+        GS.player.hp = GS.player.maxHp;
+        addLog(`DATA SYNC COMPLETE: Reached Level ${GS.player.lvl}. Integrity Restored.`, '#ff0');
     }
 }
 
-/**
- * VFX UTILITIES
- */
-class Particle {
-    constructor(x, y, color) {
-        this.x = x; this.y = y;
-        this.vx = (Math.random() - 0.5) * 6;
-        this.vy = (Math.random() - 0.5) * 6;
-        this.life = 30;
-        this.color = color;
-    }
-    update() { this.x += this.vx; this.y += this.vy; this.life--; }
-    draw(c) {
-        c.globalAlpha = this.life / 30;
-        c.fillStyle = this.color;
-        c.fillRect(this.x, this.y, 2, 2);
-        c.globalAlpha = 1;
+function upgrade(type) {
+    if(GS.player.nanites >= 50) {
+        GS.player.nanites -= 50;
+        if(type === 'atk') GS.player.atk += 5;
+        if(type === 'def') GS.player.def += 2;
+        addLog(`System Upgrade installed.`, '#0ff');
+        updateUI();
+    } else {
+        addLog(`Insufficient Nanites.`, '#f00');
     }
 }
 
-function explode(x, y, color) {
-    for(let i=0; i<15; i++) Game.particles.push(new Particle(x, y, color));
+function nextSector() {
+    GS.depth++;
+    document.getElementById('modal-title').innerText = `SECTOR ${GS.depth-1} PURIFIED`;
+    document.getElementById('modal-text').innerText = `Advancing to Sub-Level ${GS.depth}... Enemies are evolving.`;
+    document.getElementById('modal').style.display = 'block';
 }
 
-// Input Handlers
-window.addEventListener('keydown', e => { if(Game.input.hasOwnProperty(e.key)) Game.input[e.key] = true; });
-window.addEventListener('keyup', e => { if(Game.input.hasOwnProperty(e.key)) Game.input[e.key] = false; });
-window.addEventListener('mousemove', e => { Game.input.mx = e.clientX; Game.input.my = e.clientY; });
-window.addEventListener('mousedown', () => Game.input.mouse = true);
-window.addEventListener('mouseup', () => Game.input.mouse = false);
+function closeModal() {
+    document.getElementById('modal').style.display = 'none';
+    generateSector();
+    render();
+}
 
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    for(let y=0; y<GS.gridH; y++) {
+        for(let x=0; x<GS.gridW; x++) {
+            const tile = GS.map[y][x];
+            const isFog = GS.fog[y][x];
+
+            if(isFog) {
+                ctx.fillStyle = '#020205';
+            } else {
+                if(tile === 1) ctx.fillStyle = '#1a1a2e';
+                else if(tile === 2) ctx.fillStyle = '#0f0'; // Portal
+                else ctx.fillStyle = '#08080f';
+            }
+            
+            ctx.fillRect(x * GS.tileSize, y * GS.tileSize, GS.tileSize-1, GS.tileSize-1);
+        }
+    }
+
+    // Render Enemies
+    GS.enemies.forEach(e => {
+        if(GS.fog[e.y][e.x] === 0) {
+            ctx.fillStyle = e.type === 'ELITE' ? '#ff00ff' : '#ff4400';
+            ctx.beginPath();
+            ctx.moveTo(e.x * GS.tileSize + 20, e.y * GS.tileSize + 5);
+            ctx.lineTo(e.x * GS.tileSize + 35, e.y * GS.tileSize + 35);
+            ctx.lineTo(e.x * GS.tileSize + 5, e.y * GS.tileSize + 35);
+            ctx.fill();
+        }
+    });
+
+    // Render Player
+    ctx.fillStyle = '#00f2ff';
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = '#00f2ff';
+    ctx.fillRect(GS.player.x * GS.tileSize + 5, GS.player.y * GS.tileSize + 5, GS.tileSize - 10, GS.tileSize - 10);
+    ctx.shadowBlur = 0;
+}
+
+init();
 </script>
 </body>
 </html>
