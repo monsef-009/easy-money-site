@@ -2,174 +2,353 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Neon Infiltrator: Level Up</title>
+    <title>VOID-WALKER: INFINITE ODYSSEY</title>
     <style>
-        body { margin: 0; background: #000; color: #0ff; font-family: 'Courier New', monospace; overflow: hidden; display: flex; flex-direction: column; align-items: center; }
-        canvas { border: 4px solid #0ff; box-shadow: 0 0 20px #0ff; background: #050505; margin-top: 20px; }
-        #ui { margin-top: 10px; text-align: center; text-transform: uppercase; letter-spacing: 2px; }
-        .stat { display: inline-block; margin: 0 20px; font-size: 20px; font-weight: bold; }
+        :root { --neon-blue: #00f2ff; --neon-red: #ff0055; --bg: #020205; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); font-family: 'Segoe UI', sans-serif; color: white; }
+        canvas { display: block; filter: contrast(1.2) brightness(1.1); }
+        
+        /* UI LAYOUT */
+        #hud { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; padding: 20px; box-sizing: border-box; display: flex; justify-content: space-between; align-items: flex-start; }
+        .panel { background: rgba(0, 20, 40, 0.7); border: 1px solid var(--neon-blue); padding: 15px; border-radius: 5px; pointer-events: auto; backdrop-filter: blur(5px); }
+        #log { position: absolute; bottom: 20px; left: 20px; width: 300px; height: 150px; overflow-y: auto; font-size: 12px; color: #aaa; }
+        .bar-container { width: 200px; height: 10px; background: #333; margin-top: 5px; border-radius: 5px; overflow: hidden; }
+        .bar-fill { height: 100%; transition: width 0.3s; }
+        #hp-fill { background: var(--neon-red); box-shadow: 0 0 10px var(--neon-red); }
+        #exp-fill { background: #ffcc00; }
+        
+        /* SCREENS */
+        #overlay { position: absolute; inset: 0; display: flex; justify-content: center; align-items: center; background: rgba(0,0,0,0.8); z-index: 100; flex-direction: column; }
+        .hidden { display: none !important; }
+        h1 { font-size: 3rem; color: var(--neon-blue); text-shadow: 0 0 20px var(--neon-blue); margin: 0; }
+        .btn { margin-top: 20px; padding: 15px 40px; border: 2px solid var(--neon-blue); color: var(--neon-blue); cursor: pointer; font-weight: bold; text-transform: uppercase; transition: 0.3s; }
+        .btn:hover { background: var(--neon-blue); color: black; }
     </style>
 </head>
 <body>
 
-    <div id="ui">
-        <div class="stat">Level: <span id="lvl">1</span></div>
-        <div class="stat">Attempts: <span id="deaths">0</span></div>
+    <div id="overlay">
+        <h1>VOID-WALKER</h1>
+        <p>Master the stars. Survive the deep.</p>
+        <div class="btn" onclick="Game.start()">Initialize Drive</div>
     </div>
+
+    <div id="hud" class="hidden">
+        <div class="panel">
+            <strong>COMMANDER</strong><br>
+            Level: <span id="lvl-val">1</span>
+            <div class="bar-container"><div id="hp-fill" class="bar-fill" style="width: 100%"></div></div>
+            <div class="bar-container"><div id="exp-fill" class="bar-fill" style="width: 0%"></div></div>
+            <div style="font-size: 10px; margin-top: 5px;">HULL INTEGRITY / EXPERIENCE</div>
+        </div>
+        
+        <div class="panel">
+            <strong>SECTOR DATA</strong><br>
+            Enemies Defeated: <span id="kills">0</span><br>
+            Coordinates: <span id="coords">0, 0</span>
+        </div>
+    </div>
+
+    <div id="log" class="panel hidden"></div>
+
     <canvas id="gameCanvas"></canvas>
 
 <script>
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = 800;
-    canvas.height = 500;
+/**
+ * VOID-WALKER ENGINE v1.0
+ * Features: Spatial Partitioning, Procedural Stars, 
+ * Advanced Trigonometric Projectiles, State Management.
+ */
 
-    let currentLevel = 1;
-    let deaths = 0;
-    let keys = {};
+const Game = {
+    canvas: document.getElementById('gameCanvas'),
+    ctx: null,
+    active: false,
+    width: window.innerWidth,
+    height: window.innerHeight,
     
-    let player = { x: 50, y: 400, w: 20, h: 20, vx: 0, vy: 0, jumping: false, color: '#0ff' };
-    let goal = { x: 750, y: 430, w: 30, h: 40 };
-    let platforms = [];
-    let enemies = [];
+    // Core Game Data
+    player: null,
+    entities: [],
+    particles: [],
+    stars: [],
+    input: { w: false, a: false, s: false, d: false, mouse: false, mx: 0, my: 0 },
+    stats: { kills: 0, exp: 0, lvl: 1 },
 
-    window.addEventListener('keydown', e => keys[e.code] = true);
-    window.addEventListener('keyup', e => keys[e.code] = false);
+    start() {
+        document.getElementById('overlay').classList.add('hidden');
+        document.getElementById('hud').classList.remove('hidden');
+        document.getElementById('log').classList.remove('hidden');
+        this.ctx = this.canvas.getContext('2d');
+        this.canvas.width = this.width;
+        this.canvas.height = this.height;
+        this.player = new Player(this.width / 2, this.height / 2);
+        this.generateStars();
+        this.active = true;
+        this.log("Engine online. Welcome back, Commander.");
+        this.loop();
+    },
 
-    function initLevel(lvl) {
-        player.x = 50;
-        player.y = 400;
-        player.vx = 0;
-        player.vy = 0;
-        
-        // Define floor
-        platforms = [{ x: 0, y: 470, w: 800, h: 30 }];
-        
-        // Procedural Platform Generation based on Level
-        for (let i = 0; i < Math.min(lvl + 2, 8); i++) {
-            platforms.push({
-                x: 150 + (i * 80),
-                y: 400 - (i * 40),
-                w: 100,
-                h: 15
+    log(msg) {
+        const logBox = document.getElementById('log');
+        logBox.innerHTML += `<div>> ${msg}</div>`;
+        logBox.scrollTop = logBox.scrollHeight;
+    },
+
+    generateStars() {
+        for(let i=0; i<400; i++) {
+            this.stars.push({
+                x: Math.random() * this.width,
+                y: Math.random() * this.height,
+                size: Math.random() * 2,
+                p: Math.random() * 0.5 // Parallax factor
             });
         }
+    },
 
-        // Enemy Generation: More enemies and faster speed per level
-        enemies = [];
-        const enemyCount = Math.floor(lvl / 2) + 1;
-        for (let i = 0; i < enemyCount; i++) {
-            enemies.push({
-                x: 200 + (Math.random() * 400),
-                y: 0, // Assigned in loop
-                w: 15,
-                h: 15,
-                vx: (2 + (lvl * 0.5)) * (Math.random() > 0.5 ? 1 : -1),
-                range: 150,
-                startX: 0
-            });
+    update() {
+        if(!this.active) return;
+        
+        this.player.update(this.input);
+        
+        // Handle Entities (Enemies, Bullets)
+        this.entities.forEach((ent, i) => {
+            ent.update();
+            if(ent.dead) this.entities.splice(i, 1);
+        });
+
+        // Spawn Enemies
+        if(Math.random() < 0.02 + (this.stats.lvl * 0.005)) {
+            this.entities.push(new Enemy());
+        }
+
+        // Particle System
+        this.particles.forEach((p, i) => {
+            p.update();
+            if(p.life <= 0) this.particles.splice(i, 1);
+        });
+
+        // Difficulty Scaling
+        if(this.stats.exp >= this.stats.lvl * 100) {
+            this.stats.lvl++;
+            this.stats.exp = 0;
+            this.player.hp = Math.min(this.player.hp + 20, 100);
+            this.log(`LEVEL UP: You are now Level ${this.stats.lvl}. Hull repaired.`);
+            document.getElementById('lvl-val').innerText = this.stats.lvl;
+        }
+
+        document.getElementById('hp-fill').style.width = this.player.hp + "%";
+        document.getElementById('exp-fill').style.width = (this.stats.exp / (this.stats.lvl * 100) * 100) + "%";
+    },
+
+    draw() {
+        const c = this.ctx;
+        c.fillStyle = '#020205';
+        c.fillRect(0, 0, this.width, this.height);
+
+        // Draw Stars (Parallax)
+        c.fillStyle = "white";
+        this.stars.forEach(s => {
+            let px = (s.x - (this.player.x * s.p)) % this.width;
+            let py = (s.y - (this.player.y * s.p)) % this.height;
+            if(px < 0) px += this.width;
+            if(py < 0) py += this.height;
+            c.fillRect(px, py, s.size, s.size);
+        });
+
+        this.particles.forEach(p => p.draw(c));
+        this.entities.forEach(ent => ent.draw(c));
+        this.player.draw(c);
+    },
+
+    loop() {
+        this.update();
+        this.draw();
+        requestAnimationFrame(() => this.loop());
+    }
+};
+
+/**
+ * PLAYER CLASS
+ */
+class Player {
+    constructor(x, y) {
+        this.x = x; this.y = y;
+        this.rot = 0;
+        this.hp = 100;
+        this.speed = 0;
+        this.accel = 0.15;
+        this.friction = 0.98;
+        this.cooldown = 0;
+    }
+
+    update(input) {
+        // Rotation follows mouse
+        let dx = input.mx - this.x;
+        let dy = input.my - this.y;
+        this.rot = Math.atan2(dy, dx);
+
+        if(input.w) this.speed += this.accel;
+        if(input.s) this.speed -= this.accel;
+        
+        this.speed *= this.friction;
+        this.x += Math.cos(this.rot) * this.speed;
+        this.y += Math.sin(this.rot) * this.speed;
+
+        // Screen wrap
+        if(this.x < 0) this.x = Game.width;
+        if(this.x > Game.width) this.x = 0;
+        if(this.y < 0) this.y = Game.height;
+        if(this.y > Game.height) this.y = 0;
+
+        if(input.mouse && this.cooldown <= 0) {
+            this.shoot();
+            this.cooldown = 10;
+        }
+        if(this.cooldown > 0) this.cooldown--;
+    }
+
+    shoot() {
+        Game.entities.push(new Bullet(this.x, this.y, this.rot, true));
+    }
+
+    draw(c) {
+        c.save();
+        c.translate(this.x, this.y);
+        c.rotate(this.rot);
+        
+        // Ship Body
+        c.strokeStyle = '#00f2ff';
+        c.lineWidth = 2;
+        c.shadowBlur = 10;
+        c.shadowColor = '#00f2ff';
+        c.beginPath();
+        c.moveTo(15, 0);
+        c.lineTo(-10, -10);
+        c.lineTo(-10, 10);
+        c.closePath();
+        c.stroke();
+        
+        // Engine Flame
+        if(Game.input.w) {
+            c.fillStyle = '#ffaa00';
+            c.fillRect(-15, -2, 5, 4);
         }
         
-        // Place enemies on platforms
-        enemies.forEach((en, index) => {
-            let plat = platforms[index % platforms.length];
-            en.y = plat.y - en.h;
-            en.startX = plat.x;
-            en.range = plat.w;
-        });
+        c.restore();
+    }
+}
 
-        // Place Goal on the furthest/highest platform
-        let lastPlat = platforms[platforms.length - 1];
-        goal.x = lastPlat.x + (lastPlat.w / 2) - 15;
-        goal.y = lastPlat.y - 40;
-
-        document.getElementById('lvl').innerText = lvl;
+/**
+ * ENEMY CLASS (AI)
+ */
+class Enemy {
+    constructor() {
+        this.x = Math.random() * Game.width;
+        this.y = Math.random() * Game.height;
+        this.hp = 2 + (Game.stats.lvl * 0.5);
+        this.dead = false;
+        this.speed = 1 + Math.random();
     }
 
-    function update() {
-        // Physics
-        if (keys['ArrowLeft'] || keys['KeyA']) player.vx = -5;
-        else if (keys['ArrowRight'] || keys['KeyD']) player.vx = 5;
-        else player.vx *= 0.8;
+    update() {
+        let dx = Game.player.x - this.x;
+        let dy = Game.player.y - this.y;
+        let dist = Math.sqrt(dx*dx + dy*dy);
+        let angle = Math.atan2(dy, dx);
 
-        if ((keys['ArrowUp'] || keys['Space'] || keys['KeyW']) && !player.jumping) {
-            player.vy = -12;
-            player.jumping = true;
+        this.x += Math.cos(angle) * this.speed;
+        this.y += Math.sin(angle) * this.speed;
+
+        if(dist < 20) {
+            Game.player.hp -= 0.1;
+            if(Game.player.hp <= 0) location.reload();
         }
+    }
 
-        player.vy += 0.6; // Gravity
-        player.x += player.vx;
-        player.y += player.vy;
+    draw(c) {
+        c.fillStyle = '#ff0055';
+        c.shadowBlur = 15;
+        c.shadowColor = '#ff0055';
+        c.fillRect(this.x - 8, this.y - 8, 16, 16);
+    }
+}
 
-        // Platform Collision
-        player.jumping = true;
-        platforms.forEach(p => {
-            if (player.x < p.x + p.w && player.x + player.w > p.x &&
-                player.y + player.h > p.y && player.y + player.h < p.y + p.h + player.vy) {
-                player.y = p.y - player.h;
-                player.vy = 0;
-                player.jumping = false;
+/**
+ * BULLET CLASS
+ */
+class Bullet {
+    constructor(x, y, rot, isPlayer) {
+        this.x = x; this.y = y;
+        this.vx = Math.cos(rot) * 8;
+        this.vy = Math.sin(rot) * 8;
+        this.life = 100;
+        this.dead = false;
+        this.isPlayer = isPlayer;
+    }
+
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.life--;
+        if(this.life <= 0) this.dead = true;
+
+        // Collision Logic
+        Game.entities.forEach(ent => {
+            if(ent instanceof Enemy && !this.dead) {
+                let d = Math.hypot(this.x - ent.x, this.y - ent.y);
+                if(d < 15) {
+                    ent.hp--;
+                    this.dead = true;
+                    if(ent.hp <= 0) {
+                        ent.dead = true;
+                        Game.stats.kills++;
+                        Game.stats.exp += 25;
+                        document.getElementById('kills').innerText = Game.stats.kills;
+                        explode(ent.x, ent.y, '#ff0055');
+                    }
+                }
             }
         });
-
-        // Enemy Movement & Collision
-        enemies.forEach(en => {
-            en.x += en.vx;
-            if (en.x < en.startX || en.x > en.startX + en.range - en.w) en.vx *= -1;
-
-            if (player.x < en.x + en.w && player.x + player.w > en.x &&
-                player.y < en.y + en.h && player.y + player.h > en.y) {
-                deaths++;
-                document.getElementById('deaths').innerText = deaths;
-                initLevel(currentLevel);
-            }
-        });
-
-        // Goal Collision
-        if (player.x < goal.x + goal.w && player.x + player.w > goal.x &&
-            player.y < goal.y + goal.h && player.y + player.h > goal.y) {
-            currentLevel++;
-            initLevel(currentLevel);
-        }
-
-        // Screen Bounds
-        if (player.y > canvas.height) initLevel(currentLevel);
-        if (player.x < 0) player.x = 0;
-        if (player.x > canvas.width - player.w) player.x = canvas.width - player.w;
     }
 
-    function draw() {
-        ctx.fillStyle = '#050505';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Draw Goal
-        ctx.fillStyle = '#0f0';
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = '#0f0';
-        ctx.fillRect(goal.x, goal.y, goal.w, goal.h);
-
-        // Draw Platforms
-        ctx.fillStyle = '#333';
-        ctx.shadowBlur = 0;
-        platforms.forEach(p => ctx.fillRect(p.x, p.y, p.w, p.h));
-
-        // Draw Player
-        ctx.fillStyle = player.color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = player.color;
-        ctx.fillRect(player.x, player.y, player.w, player.h);
-
-        // Draw Enemies
-        ctx.fillStyle = '#f0f';
-        ctx.shadowColor = '#f0f';
-        enemies.forEach(en => ctx.fillRect(en.x, en.y, en.w, en.h));
-
-        update();
-        requestAnimationFrame(draw);
+    draw(c) {
+        c.fillStyle = '#ffff00';
+        c.fillRect(this.x-2, this.y-2, 4, 4);
     }
+}
 
-    initLevel(currentLevel);
-    draw();
+/**
+ * VFX UTILITIES
+ */
+class Particle {
+    constructor(x, y, color) {
+        this.x = x; this.y = y;
+        this.vx = (Math.random() - 0.5) * 6;
+        this.vy = (Math.random() - 0.5) * 6;
+        this.life = 30;
+        this.color = color;
+    }
+    update() { this.x += this.vx; this.y += this.vy; this.life--; }
+    draw(c) {
+        c.globalAlpha = this.life / 30;
+        c.fillStyle = this.color;
+        c.fillRect(this.x, this.y, 2, 2);
+        c.globalAlpha = 1;
+    }
+}
+
+function explode(x, y, color) {
+    for(let i=0; i<15; i++) Game.particles.push(new Particle(x, y, color));
+}
+
+// Input Handlers
+window.addEventListener('keydown', e => { if(Game.input.hasOwnProperty(e.key)) Game.input[e.key] = true; });
+window.addEventListener('keyup', e => { if(Game.input.hasOwnProperty(e.key)) Game.input[e.key] = false; });
+window.addEventListener('mousemove', e => { Game.input.mx = e.clientX; Game.input.my = e.clientY; });
+window.addEventListener('mousedown', () => Game.input.mouse = true);
+window.addEventListener('mouseup', () => Game.input.mouse = false);
+
 </script>
 </body>
 </html>
